@@ -1,0 +1,14 @@
+node_modules
+dist
+.tmp
+.DS_Store
+# screenshot / check output
+shots/
+shots-*/
+# logs
+*.log
+npm-debug.log*
+# local env files
+.env
+.env.*
+progress.txt

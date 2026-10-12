@@ -1,0 +1,34 @@
+{
+  "name": "bukitjalil-pavilion-infographic",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "homepage": "https://noowxela.github.io/bukitjalil-pavilion-infographic/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/noowxela/bukitjalil-pavilion-infographic.git"
+  },
+  "description": "3D site-analysis infographic: Bukit Jalil Sports City, Kuala Lumpur (map from map-assets)",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "doctor": "node scripts/doctor.mjs",
+    "shots": "node scripts/screenshots.mjs"
+  },
+  "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/ibm-plex-sans": "^5.3.0",
+    "@fontsource/noto-sans-sc": "^5.3.0",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@types/dat.gui": "^0.7.13",
+    "@types/three": "^0.186.0",
+    "dat.gui": "^0.7.9",
+    "puppeteer-core": "^25.13.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4"
+  }
+}
