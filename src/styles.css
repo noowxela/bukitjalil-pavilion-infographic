@@ -407,6 +407,15 @@ a { color: inherit; }
    bottom, one bottom sheet (text + side panel) above the rail; compass / reset and the credit strip above the sheet.
    ====================================================================================================== */
 .sheet, .more-btn, .more-menu, .mi-label { display: none; }
+/* Dev camera panel lives in the ⋯ menu (src/dev/cameraGui.ts). On a wide stage the ⋯ is otherwise mobile-only. */
+html.dev .top-bar { z-index: 25; }
+html.dev .more-btn { display: grid; }
+html.dev .top-buttons { position: relative; }
+html.dev .more-menu:not([hidden]) { display: flex; flex-direction: column; position: absolute; right: 0; top: calc(100% + 6px); min-width: 200px;
+  background: var(--paper); border: 1px solid var(--hairline); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14); padding: 4px; z-index: 40; }
+html.dev .more-menu .icon-btn { width: 100%; height: 40px; display: flex; align-items: center; justify-content: flex-start; gap: 10px; padding: 0 12px; border: 0; background: transparent; font-size: 14px; text-align: left; }
+html.dev .more-menu .mi-label { display: block; font-family: var(--font-sans); font-size: 14px; line-height: 1.25; }
+html.dev .more-menu .icon-btn[aria-pressed='true'] { background: var(--grey-4); color: var(--ink); }
 html.mobile { --m-rail: 48px; --m-safe-b: env(safe-area-inset-bottom, 0px); --m-safe-t: env(safe-area-inset-top, 0px); }
 html.mobile #viewport { inset: 0 0 auto 0; height: 100vh; height: 100dvh; }
 html.mobile #stage { width: 100%; height: 100%; transform: none !important; }

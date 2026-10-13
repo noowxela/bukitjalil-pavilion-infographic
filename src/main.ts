@@ -201,6 +201,7 @@ function setMobile(m: boolean) {
     for (const id of DESK_ORDER) topTools.append(document.getElementById(id)!);
     closeMenu(); world.setDistanceScale(1); stage.style.removeProperty('--m-above');
   }
+  const camBtn = document.getElementById('btn-camera'); if (camBtn) moreMenu.append(camBtn);
   if (current >= 0) { renderText(chapters[current]); applyPanels(true); }
 }
 function peekHeight() {

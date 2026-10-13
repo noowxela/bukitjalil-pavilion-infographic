@@ -3,7 +3,7 @@
 // Planned towers (map-assets facts.json "planned", cited storeys) are drawn here as translucent ghost massing instead.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { MapModel, type Area, type Building, type ModePatch, type Palette, type SceneMode } from '@map-assets';
+import { MapModel, clipPlanes, type Area, type Building, type ModePatch, type Palette, type SceneMode } from '@map-assets';
 
 export { DEFAULT_MODE, type RailState, type SceneMode } from '@map-assets';
 export interface View { target: [number, number, number]; azimuth: number; polar: number; distance: number }
@@ -53,10 +53,9 @@ export class World {
   private ghostEdge = new THREE.LineBasicMaterial({ transparent: true, opacity: 0.85 });
   private H: number;
   private parkMesh: THREE.Mesh | null = null;
-  /** Building outlines (map-assets EdgesGeometry lines), faded with screen density in frame(). */
-  private edgeLines: THREE.LineSegments[] = [];
-  private edgeFade = 1;
-  get outlineFade() { return this.edgeFade; }
+  /** Outline strength from map-assets (screen density). Kept for anything that read it off the stage. */
+  get outlineFade() { return this.model.outlineFade; }
+  private orbitMax = 6000;
   private parkMat = new THREE.MeshLambertMaterial({ transparent: true, opacity: 0.9 });
   // event-day crowd (chapter 06, illustrative): dots streaming along a walking route
   private crowd: { mesh: THREE.InstancedMesh; pts: THREE.Vector3[]; cum: number[]; len: number; off: Float32Array; side: Float32Array } | null = null;
@@ -85,23 +84,25 @@ export class World {
   constructor(container: HTMLElement, area: Area) {
     this.area = area; this.H = area.meta.halfSizeM;
     const plannedNames = new Set(((area.facts.planned as unknown as { osmName: string }[] | undefined) ?? []).map((p) => p.osmName));
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    // Logarithmic depth keeps the ground layers from z-fighting out to tens of kilometres. The renderer owns this
+    // flag (map-assets does not create it). clipPlanes() grows `far` with the study area.
+    const clip = clipPlanes(this.H);
+    this.orbitMax = Math.max(6000, this.H * 4);
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', logarithmicDepthBuffer: true });
     this.renderer.setSize(this.stageW, this.stageH, false);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    // The shadow map is redrawn only when the light or the massing changes (setMode / theme), not every frame. map-assets
-    // draws one mesh per building, and this area has 5,168 shadow-casting blocks (KLEC: 329): re-rendering them into the
-    // 4096² shadow map on every frame pushed the frame past 16.7 ms, so the 00 orbit ran at an uneven 60/30 fps and the
-    // bearing advanced in irregular 0.08°/0.24° steps: the "blinking" perspective. The sun is fixed while the camera moves.
+    // The shadow map is not redrawn every frame. An orbit does not move the fitted shadow box (fitShadows), so the
+    // 00 turntable stays at one shadow draw; panning, zooming or moving the sun asks for a redraw.
     this.renderer.shadowMap.autoUpdate = false; this.renderer.shadowMap.needsUpdate = true;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.localClippingEnabled = true; // trains are clipped at the study-area frame
     container.appendChild(this.renderer.domElement);
 
-    this.camera = new THREE.PerspectiveCamera(28, this.stageW / this.stageH, 20, 14000);
+    this.camera = new THREE.PerspectiveCamera(28, this.stageW / this.stageH, clip.near, clip.far);
     this.applyViewOffset();
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-    Object.assign(this.controls, { enableDamping: true, dampingFactor: 0.08, minPolarAngle: 0.12, maxPolarAngle: 1.3, minDistance: 220, maxDistance: 6000, screenSpacePanning: false, panSpeed: 0.6, rotateSpeed: 0.6, zoomSpeed: 0.8 });
+    Object.assign(this.controls, { enableDamping: true, dampingFactor: 0.08, minPolarAngle: 0.12, maxPolarAngle: 1.3, minDistance: 220, maxDistance: this.orbitMax, screenSpacePanning: false, panSpeed: 0.6, rotateSpeed: 0.6, zoomSpeed: 0.8 });
     this.controls.addEventListener('start', () => { this.tween = null; this.turnHeld = true; this.onUserInteract?.(); });
     this.controls.addEventListener('end', () => { this.turnHeld = false; this.turnResumeAt = performance.now() + World.TURN_RESUME_MS; });
     this.controls.addEventListener('change', () => {
@@ -126,7 +127,6 @@ export class World {
       g.rotateX(-Math.PI / 2); g.translate(0, 0.14, 0);
       this.parkMesh = new THREE.Mesh(g, this.parkMat); this.parkMesh.receiveShadow = true; this.parkMesh.visible = false; this.scene.add(this.parkMesh);
     }
-    this.model.group.traverse((o) => { if ((o as THREE.LineSegments).isLineSegments && (o as THREE.LineSegments).geometry.type === 'EdgesGeometry') this.edgeLines.push(o as THREE.LineSegments); });
     this.applyTheme();
     this.setMode({});
     this.renderer.setAnimationLoop((t) => this.frame(t));
@@ -193,7 +193,7 @@ export class World {
    *  narrow / portrait screen. 1 on desktop. */
   setDistanceScale(k: number) {
     if (Math.abs(k - this.distScale) < 1e-3) return;
-    const prev = this.distScale; this.distScale = k; this.controls.maxDistance = 6000 * Math.max(1, k);
+    const prev = this.distScale; this.distScale = k; this.controls.maxDistance = this.orbitMax * Math.max(1, k);
     if (!this.tween) { const v = this.currentView(); this.applyView({ ...v, distance: (v.distance * k) / prev }); }
     else this.tween.to = { ...this.tween.to, distance: (this.tween.to.distance * k) / prev };
   }
@@ -203,7 +203,7 @@ export class World {
   applyTheme() {
     const bg = cssColor('--scene-bg');
     this.scene.background = bg;
-    this.scene.fog = new THREE.Fog(bg, 3600, 8200);
+    this.scene.fog = new THREE.Fog(bg, 3600, Math.max(8200, this.camera.far * 0.55));
     this.model.setPalette(paletteFromCss(this.area.zones));
     this.renderer.shadowMap.needsUpdate = true;
     this.ghostMat.color = cssColor('--ghost'); this.ghostEdge.color = cssColor('--ghost-edge');
@@ -292,24 +292,11 @@ export class World {
     this.stepTween(now);
     this.stepTurntable(now, dt);
     if (!this.tween) this.controls.update();
-    // Near plane follows the camera distance. The flat ground layers sit 2-6 cm apart (ground 0, green 0.04, roads
-    // 0.06/0.08, water 0.09/0.10 m); with near fixed at 20 m (KLEC's value) a 24-bit depth buffer resolves only ~5 cm at
-    // 3.5-3.9 km (~20 cm toward the far edge), so the layers z-fought in blocky patches as the view turned. Nothing comes
-    // within 5 % of the orbit distance of the camera (it is >= 1 km above the ground in the wide views), so near = 5 %
-    // of the distance (20-400 m) is safe and buys up to 20x the depth precision.
-    const wantNear = THREE.MathUtils.clamp(this.camera.position.distanceTo(this.controls.target) * 0.05, 20, 400);
-    if (Math.abs(wantNear - this.camera.near) > this.camera.near * 0.01) { this.camera.near = wantNear; this.camera.updateProjectionMatrix(); }
-    // Building outlines fade out as they get denser on screen. This area has 5,168 outlined blocks seen from up to ~3.9 km
-    // (KLEC: 329 from ~1.4 km); at ~0.5 px per metre the 1 px outlines alias, and as the 00 orbit turns they pop on and
-    // off from frame to frame (measured: 82 % of the pixels that blink between orbit frames are outline pixels). Full
-    // outlines from 1.3 px/m (close-ups), 35 % at 0.6 px/m and below (the overview). The materials are shared and swapped
-    // by setMode, so the base opacity is restored right after the draw.
-    const ppm = this.pxPerMetre(); const k = THREE.MathUtils.clamp((ppm - 0.6) / (1.3 - 0.6), 0, 1);
-    this.edgeFade = 0.35 + 0.65 * k;
-    const mats = new Map<THREE.LineBasicMaterial, number>();
-    if (this.edgeFade < 1) for (const e of this.edgeLines) { const m = e.material as THREE.LineBasicMaterial; if (!mats.has(m)) { mats.set(m, m.opacity); m.opacity *= this.edgeFade; } }
+    // Outlines and the shadow box live in map-assets. Logarithmic depth (set on the renderer) replaces the old
+    // near-plane nudge: the ground layers no longer need a closer near plane to stay apart.
+    this.model.setScreenDensity(this.pxPerMetre());
+    if (this.model.fitShadows(this.camera, this.controls.target)) this.renderer.shadowMap.needsUpdate = true;
     this.renderer.render(this.scene, this.camera);
-    for (const [m, o] of mats) m.opacity = o;
     for (const f of this.onFrame) f();
   }
 }

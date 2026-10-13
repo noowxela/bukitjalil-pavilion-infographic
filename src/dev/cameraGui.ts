@@ -46,8 +46,33 @@ export function attachCameraGui(world: World) {
 
   const gui = new GUI({ width: 300 });
   const host = gui.domElement.parentElement ?? gui.domElement;
+  // Inside #stage so the panel shares the header's stacking context (the stage transform
+  // otherwise traps the ⋯ menu under a body-level panel).
+  document.getElementById('stage')?.append(host);
   host.style.top = '100px';
-  host.style.zIndex = '30';
+  host.style.zIndex = '14';
+  // The collapsed "Open Controls" bar sits on the map. Keep the whole panel hidden until the ⋯ menu asks for it.
+  gui.hide();
+  const menu = document.getElementById('more-menu');
+  const toggle = document.createElement('button');
+  toggle.id = 'btn-camera';
+  toggle.type = 'button';
+  toggle.className = 'icon-btn';
+  toggle.title = 'Camera controls';
+  toggle.setAttribute('aria-pressed', 'false');
+  toggle.innerHTML = '<span class="ico" aria-hidden="true">⌖</span><span class="mi-label">Camera controls</span>';
+  let shown = false;
+  const setShown = (on: boolean) => {
+    shown = on;
+    if (on) { gui.show(); gui.open(); } else gui.hide();
+    toggle.setAttribute('aria-pressed', String(on));
+  };
+  toggle.addEventListener('click', () => setShown(!shown));
+  gui.domElement.querySelector('.close-button')?.addEventListener('click', () => {
+    queueMicrotask(() => { if (gui.domElement.querySelector('ul.closed')) setShown(false); });
+  });
+  menu?.append(toggle);
+  document.documentElement.classList.add('dev');
   const view = gui.addFolder('Camera');
   const changed = (c: GUIController) => {
     c.onChange(apply);

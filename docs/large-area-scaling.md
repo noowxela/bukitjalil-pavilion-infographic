@@ -1,6 +1,6 @@
 # Scaling the 3D map to larger areas (10–20 km)
 
-Status: **plan, not built.** Written 2026-10-13 after the chapter 00 orbit flicker fix (commit 6ca3a43).
+Status: **rendering half shipped** (2026-10-13). Depth, ground layers, 1 km building batches, outline density and view-fitted shadows are in `map-assets` and this site's `src/scene.ts`. Streaming the map as separate tile files is still open (item 4).
 
 ## Background: the flicker fix in 6ca3a43
 
@@ -57,6 +57,23 @@ KLEC, for reference, measures 1,766.
 - Turn shadows off entirely when the view is far out, where they read as noise anyway.
 
 ## Where the work goes
-- Items 1, 2, 5 and the merging in item 3 belong in **map-assets**, so every site (KLEC, Bukit Jalil, future areas) gets them. Release them as a new tag, then re-pin each website.
-- Once item 1 ships, the website-side outline fade and near-plane workaround in `src/scene.ts` can be simplified.
-- Re-run the flicker probe (pixels blinking per frame during the 00 orbit, on a real GPU) before and after each step, and keep every site at or below KLEC's level.
+- Items 1, 2, 5 and the merging in item 3 belong in **map-assets**, so every site (KLEC, Bukit Jalil, future areas) gets them. Release them as a new tag, then re-pin each website. Not tagged yet: the edits are local in this site's `map-assets` submodule.
+- Once item 1 ships, the website-side outline fade and near-plane workaround in `src/scene.ts` can be simplified. Done: the near-plane nudge is gone, and outline opacity is `MapModel.setScreenDensity`.
+- Re-run the flicker probe (pixels blinking per frame during the 00 orbit, on a real GPU) before and after each step, and keep every site at or below KLEC's level. Not re-run here. What was checked is below.
+
+## What shipped
+
+| Plan item | Where | Behaviour |
+|---|---|---|
+| 1. Depth | `src/scene.ts`, `examples/basic/main.ts` | `logarithmicDepthBuffer: true`. `clipPlanes(halfSizeM)` sets near = 1 m and far = max(14 km, 3× the study-square diagonal). Bukit Jalil is 15.3 km. |
+| 2. Flat layers | `map-assets` `model.ts` | Green, roads, water and footways do not write depth. Draw order is ground → green → roads → major roads → water, then footways. The small height offsets stay, so a close view still stacks the same way. |
+| 3. Buildings | `map-assets` `model.ts` | One merged mesh (and one outline mesh) per 1 km tile, material and key/context. Shade rays still hit the original blocks. `setScreenDensity` keeps the 35 % outline floor at ≤0.6 px/m and full outlines from 1.3 px/m. Below 0.12 px/m (a ~20 km square framed like this site, not the current chapters) outlines and context blocks turn off. |
+| 4. Tiles | not done | Batches are 1 km squares, so off-screen blocks are frustum-culled, but the site still downloads one area file. |
+| 5. Shadows | `MapModel.fitShadows` | The shadow box follows the orbit target and stays put while the camera only turns, so the 00 orbit does not redraw the 4096² map. Shadows turn off when that box would be coarser than 2.5 m per texel. The old ±760 m box remains the floor for a 500 m study square (KLEC) until a site calls `fitShadows`. |
+
+Checked in the browser on the running dev server (light theme, chapter 00 and a closer chapter):
+
+- Logarithmic depth on, near 1 m, far 15,274 m. Chapter 00 desktop is 0.55 px/m and outline fade 0.35, same floor as the flicker fix.
+- About 70 draw calls and ~120k triangles for the whole model (was one mesh per block, 5,168 of them). A phone-width chapter 03 (0.23 px/m) still shows context blocks.
+- Turning the camera through a full circle marks the shadow map dirty once, not every frame. Steady frames on chapter 00 sat around 8 ms (p95 17.5 ms) in that browser.
+- Roads stay on the ground, water and green read as separate layers, and building outlines are on at a close chapter (1.7 px/m, fade 1). No WebGL errors.
