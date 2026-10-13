@@ -53,6 +53,10 @@ export class World {
   private ghostEdge = new THREE.LineBasicMaterial({ transparent: true, opacity: 0.85 });
   private H: number;
   private parkMesh: THREE.Mesh | null = null;
+  /** Building outlines (map-assets EdgesGeometry lines), faded with screen density in frame(). */
+  private edgeLines: THREE.LineSegments[] = [];
+  private edgeFade = 1;
+  get outlineFade() { return this.edgeFade; }
   private parkMat = new THREE.MeshLambertMaterial({ transparent: true, opacity: 0.9 });
   // event-day crowd (chapter 06, illustrative): dots streaming along a walking route
   private crowd: { mesh: THREE.InstancedMesh; pts: THREE.Vector3[]; cum: number[]; len: number; off: Float32Array; side: Float32Array } | null = null;
@@ -85,6 +89,11 @@ export class World {
     this.renderer.setSize(this.stageW, this.stageH, false);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // The shadow map is redrawn only when the light or the massing changes (setMode / theme), not every frame. map-assets
+    // draws one mesh per building, and this area has 5,168 shadow-casting blocks (KLEC: 329): re-rendering them into the
+    // 4096² shadow map on every frame pushed the frame past 16.7 ms, so the 00 orbit ran at an uneven 60/30 fps and the
+    // bearing advanced in irregular 0.08°/0.24° steps: the "blinking" perspective. The sun is fixed while the camera moves.
+    this.renderer.shadowMap.autoUpdate = false; this.renderer.shadowMap.needsUpdate = true;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.localClippingEnabled = true; // trains are clipped at the study-area frame
     container.appendChild(this.renderer.domElement);
@@ -117,6 +126,7 @@ export class World {
       g.rotateX(-Math.PI / 2); g.translate(0, 0.14, 0);
       this.parkMesh = new THREE.Mesh(g, this.parkMat); this.parkMesh.receiveShadow = true; this.parkMesh.visible = false; this.scene.add(this.parkMesh);
     }
+    this.model.group.traverse((o) => { if ((o as THREE.LineSegments).isLineSegments && (o as THREE.LineSegments).geometry.type === 'EdgesGeometry') this.edgeLines.push(o as THREE.LineSegments); });
     this.applyTheme();
     this.setMode({});
     this.renderer.setAnimationLoop((t) => this.frame(t));
@@ -124,7 +134,7 @@ export class World {
 
   // ---------- model (map-assets) ----------
   get mode(): SceneMode { return this.model.mode; }
-  setMode(patch: ModePatch) { this.model.setMode(patch); }
+  setMode(patch: ModePatch) { this.model.setMode(patch); this.renderer.shadowMap.needsUpdate = true; }
   /** Show / hide the planned-tower ghost massing. */
   setGhosts(on: boolean) { this.ghostGroup.visible = on; }
   get ghostsVisible() { return this.ghostGroup.visible; }
@@ -195,6 +205,7 @@ export class World {
     this.scene.background = bg;
     this.scene.fog = new THREE.Fog(bg, 3600, 8200);
     this.model.setPalette(paletteFromCss(this.area.zones));
+    this.renderer.shadowMap.needsUpdate = true;
     this.ghostMat.color = cssColor('--ghost'); this.ghostEdge.color = cssColor('--ghost-edge');
     this.parkMat.color = cssColor('--z-park'); this.crowdMat.color = cssColor('--c-route');
   }
@@ -281,7 +292,24 @@ export class World {
     this.stepTween(now);
     this.stepTurntable(now, dt);
     if (!this.tween) this.controls.update();
+    // Near plane follows the camera distance. The flat ground layers sit 2-6 cm apart (ground 0, green 0.04, roads
+    // 0.06/0.08, water 0.09/0.10 m); with near fixed at 20 m (KLEC's value) a 24-bit depth buffer resolves only ~5 cm at
+    // 3.5-3.9 km (~20 cm toward the far edge), so the layers z-fought in blocky patches as the view turned. Nothing comes
+    // within 5 % of the orbit distance of the camera (it is >= 1 km above the ground in the wide views), so near = 5 %
+    // of the distance (20-400 m) is safe and buys up to 20x the depth precision.
+    const wantNear = THREE.MathUtils.clamp(this.camera.position.distanceTo(this.controls.target) * 0.05, 20, 400);
+    if (Math.abs(wantNear - this.camera.near) > this.camera.near * 0.01) { this.camera.near = wantNear; this.camera.updateProjectionMatrix(); }
+    // Building outlines fade out as they get denser on screen. This area has 5,168 outlined blocks seen from up to ~3.9 km
+    // (KLEC: 329 from ~1.4 km); at ~0.5 px per metre the 1 px outlines alias, and as the 00 orbit turns they pop on and
+    // off from frame to frame (measured: 82 % of the pixels that blink between orbit frames are outline pixels). Full
+    // outlines from 1.3 px/m (close-ups), 35 % at 0.6 px/m and below (the overview). The materials are shared and swapped
+    // by setMode, so the base opacity is restored right after the draw.
+    const ppm = this.pxPerMetre(); const k = THREE.MathUtils.clamp((ppm - 0.6) / (1.3 - 0.6), 0, 1);
+    this.edgeFade = 0.35 + 0.65 * k;
+    const mats = new Map<THREE.LineBasicMaterial, number>();
+    if (this.edgeFade < 1) for (const e of this.edgeLines) { const m = e.material as THREE.LineBasicMaterial; if (!mats.has(m)) { mats.set(m, m.opacity); m.opacity *= this.edgeFade; } }
     this.renderer.render(this.scene, this.camera);
+    for (const [m, o] of mats) m.opacity = o;
     for (const f of this.onFrame) f();
   }
 }
