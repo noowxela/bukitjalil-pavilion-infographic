@@ -103,7 +103,9 @@ export function buildChapters(A: Area): Chapter[] {
 
   // figures
   const stadium = F.stadium, arena = F.arena, pav = F.pavilion, line4 = F.line4;
+  const complexKm2 = num(F.complexAreaKm2, 'value');
   const cap = num(stadium, 'capacity'); const rec = num(stadium, 'recordAttendance');
+  const arenaCap = num(arena, 'capacitySports');
   const leg1 = routes.find((r) => r.id === 'leg1'); const legMall = routes.find((r) => r.id === 'leg3');
   const legsTotal = routes.reduce((s, r) => s + r.length, 0); const legsSheltered = routes.reduce((s, r) => s + sheltered(r), 0);
   const walkTotal = walks.reduce((s, r) => s + r.length, 0); const walkShelt = walks.reduce((s, r) => s + sheltered(r), 0);
@@ -120,7 +122,6 @@ export function buildChapters(A: Area): Chapter[] {
   const groundPts = groundSamples(A);
   const roadPin = (id: string, local: string, title: string) => textPin(id, title, longestNamed(lines.roads, local), 2, title === local ? undefined : local);
   const pts = (r?: Route) => (r ? routePts(r) : []);
-
   const overviewMode: Partial<SceneMode> = { rails: { lrt: 'highlight', ktm: 'hidden', erl: 'hidden', py: 'hidden', mr: 'hidden' }, footways: 'hidden', routeSet: 'none', xray: false, buildingStyle: 'zone', precincts: false };
   const ctxRails = { lrt: 'context', ktm: 'hidden', erl: 'hidden', py: 'hidden', mr: 'hidden' } as const;
 
@@ -175,9 +176,91 @@ export function buildChapters(A: Area): Chapter[] {
         el.append(s, z);
       },
     },
-    // ---------------- 02 transit hub ----------------
+    // ---------------- 02 sports complex ----------------
     {
-      id: 2, label: T.tr.label, tab: T.tr.tab, title: T.tr.title, lead: T.tr.lead,
+      id: 2, label: T.sc.label, tab: T.sc.tab, title: T.sc.title, lead: T.sc.lead(complexKm2 != null ? fmt(complexKm2, 1) : '—'),
+      stats: nn([
+        cap ? { fig: fmt(cap), cap: T.sc.statStadium, swatch: zoneColor('sports') } : null,
+        arenaCap ? { fig: fmt(arenaCap), cap: T.sc.statArena, swatch: zoneColor('sports') } : null,
+        complexKm2 != null ? { fig: fmt(complexKm2, 1), cap: T.sc.statArea, swatch: zoneColor('sports') } : null,
+      ]),
+      source: T.sc.source(factsDate),
+      // Wider framing so Car Parks A–D and the sports-zone roof field read together.
+      view: { target: [1500, 0, 40], azimuth: -0.45, polar: 0.92, distance: 2100 },
+      mode: { ...overviewMode, facilities: { hotels: false, parking: true, bus: false, entrances: false } },
+      pins: (() => {
+        // Curated label pins (no invented massing). XY uses the same equirectangular project as map-assets process-osm.
+        const K = Math.PI / 180, R = 6378137, cosLat = Math.cos(meta.center.lat * K);
+        const xy = (lat: number, lon: number): XY => [(lon - meta.center.lon) * K * R * cosLat, (lat - meta.center.lat) * K * R];
+        const aquatic = xy(3.055384, 101.692967); // Perbadanan Stadium Malaysia / Moovit
+        const track = xy(3.054624, 101.691276); // stadium.gov.my TM Stadium Nasional map pin
+        // OSM leisure=track relation/9074520 (athletics oval east of MSN Mini Stadium); fallback soccer pitch way/618954828
+        const msnTrackGreen = areas.green.find((g) => g.id === 'relation/9074520')
+          ?? areas.green.find((g) => g.id === 'way/618954828');
+        const msnField: XY | null = msnTrackGreen
+          ? [msnTrackGreen.ring.reduce((s, p) => s + p[0], 0) / msnTrackGreen.ring.length,
+            msnTrackGreen.ring.reduce((s, p) => s + p[1], 0) / msnTrackGreen.ring.length]
+          : xy(3.052087, 101.690789);
+        const squashFallback = xy(3.052376, 101.69475); // Moovit; used only if OSM outline missing
+        const msn = A.findPlace('Majlis Sukan Negara Malaysia')?.c;
+        const gym: XY | null = msn ? [msn[0] + 40, msn[1] + 70] : null; // Gimnasium 3 at Kompleks MSN (KBS); offset from MSN HQ
+        const squashB = A.findPlace('National Squash Centre')?.building;
+        const squashPin = squashB
+          ? placePin('National Squash Centre', N.squash, heightLabel(squashB), 'major', zoneColor('sports'))
+          : textPin('pin-squash', N.squash, squashFallback, 12, T.sc.squashNote);
+        const carNames = ['Car Park A', 'Car Park B', 'Car Park C', 'Car Park D', 'Car Park F'] as const;
+        const cars = carNames.map((name) => {
+          const p = facilities.parking.find((x) => x.name === name); if (!p) return null;
+          const capN = p.capacity != null ? T.sc.parkingCap(fmt(p.capacity)) : undefined;
+          return textPin(`pk-${name}`, name, p.c, 3, capN);
+        });
+        return nn([
+          stationPin('SP17', `SP17 · ${N.line}`),
+          anchorPin('STADIUM', N.stadium, cap ? T.sc.pinStadium(fmt(cap)) : undefined, 45, zoneColor('sports')),
+          textPin('pin-track', N.track, track, 8, T.sc.trackNote),
+          textPin('pin-aquatic', N.aquatic, aquatic, 12, T.sc.aquaticNote),
+          placePin('Unifi Arena', N.arena, arenaCap ? T.sc.pinArena(fmt(arenaCap)) : heightLabel(A.findPlace('Unifi Arena')?.building ?? { height: 0, heightSource: 'estimate', levels: null }), 'major', zoneColor('sports')),
+          squashPin,
+          placePin('Stadium Hoki Nasional Malaysia', N.hockey, undefined, 'major', zoneColor('sports')),
+          placePin('Majlis Sukan Negara Malaysia', N.msn, undefined, 'minor', zoneColor('sports')),
+          textPin('pin-gym', N.gym, gym, 10, T.sc.gymNote),
+          textPin('pin-msn-field', N.msnField, msnField, 4, T.sc.msnFieldNote),
+          ...cars,
+        ]);
+      })(),
+      panel: (el, world) => {
+        const squashB = A.findPlace('National Squash Centre')?.building;
+        const s = h('section'); s.append(h('h3', {}, T.sc.listTitle));
+        const rows: [string, string][] = [
+          [N.stadium, T.sc.noHeight],
+          [N.track, T.sc.trackNote],
+          [N.aquatic, T.sc.pinOnly],
+          [N.squash, squashB ? heightLabel(squashB) : T.sc.squashNote],
+          [N.gym, T.sc.pinOnly],
+          [N.msnField, T.sc.msnFieldNote],
+        ];
+        for (const [name, label] of [['Unifi Arena', N.arena], ['Stadium Hoki Nasional Malaysia', N.hockey], ['Majlis Sukan Negara Malaysia', N.msn]] as const) {
+          const b = A.findPlace(name)?.building; if (b) rows.push([label, heightLabel(b)]);
+        }
+        const ul = h('ul', { class: 'station-list' });
+        for (const [a, b] of rows) ul.append(h('li', {}, `<div><div>${a}</div><div class="small">${b}</div></div>`));
+        s.append(ul);
+        const pk = h('section'); pk.append(h('h3', {}, T.sc.parkingTitle));
+        const pl = h('ul', { class: 'station-list' });
+        for (const name of ['Car Park A', 'Car Park B', 'Car Park C', 'Car Park D', 'Car Park F']) {
+          const p = facilities.parking.find((x) => x.name === name); if (!p) continue;
+          pl.append(h('li', {}, `<div><div>${name}</div><div class="small">${p.capacity != null ? T.sc.parkingCap(fmt(p.capacity)) : T.common.osm}</div></div>`));
+        }
+        pk.append(pl);
+        const layers = h('section'); layers.append(h('h3', {}, T.common.layers));
+        toggle(layers, T.sc.parking, true, (v) => world.setMode({ facilities: { parking: v } }), 'var(--c-parking, #2f6fd0)');
+        const g = h('section'); g.append(h('h3', {}, T.sc.gapsTitle), h('div', { class: 'small' }, T.sc.gaps));
+        el.append(s, pk, layers, g);
+      },
+    },
+    // ---------------- 03 transit hub ----------------
+    {
+      id: 3, label: T.tr.label, tab: T.tr.tab, title: T.tr.title, lead: T.tr.lead,
       stats: [
         { fig: fmt(stCode.filter((c) => A.station(c)).length), unit: U.stations, cap: T.tr.statStations(stCode.filter((c) => A.station(c)).join(' · ')) },
         ...(meta.railLengthsM.lrt ? [{ fig: fmt(meta.railLengthsM.lrt), unit: U.m, cap: T.tr.statTrack }] : []),
@@ -206,9 +289,9 @@ export function buildChapters(A: Area): Chapter[] {
         el.append(s1, s2, s3, s4);
       },
     },
-    // ---------------- 03 location + roads ----------------
+    // ---------------- 04 location + roads ----------------
     {
-      id: 3, label: T.loc.label, tab: T.loc.tab, title: T.loc.title, lead: T.loc.lead,
+      id: 4, label: T.loc.label, tab: T.loc.tab, title: T.loc.title, lead: T.loc.lead,
       stats: nn([
         { fig: fmt((meta.halfSizeM * 2) / 1000, 1), unit: `× ${fmt((meta.halfSizeM * 2) / 1000, 1)}`, cap: T.loc.statSquare },
         A.stationDistance('SP17', 'SP19') ? { fig: fmt(A.stationDistance('SP17', 'SP19')!), unit: U.m, cap: T.loc.statSp17Sp19 } : null,
@@ -235,9 +318,9 @@ export function buildChapters(A: Area): Chapter[] {
         el.append(s1, s2);
       },
     },
-    // ---------------- 04 massing ----------------
+    // ---------------- 05 massing ----------------
     {
-      id: 4, label: T.ms4.label, tab: T.ms4.tab, title: T.ms4.title, lead: T.ms4.lead,
+      id: 5, label: T.ms4.label, tab: T.ms4.tab, title: T.ms4.title, lead: T.ms4.lead,
       stats: nn([
         citedNow ? { fig: fmt(citedNow.height), unit: U.m, cap: T.ms4.statTallest(citedNow.name ?? '') } : null,
         { fig: fmt(stats.heightCited), unit: U.blocks, cap: T.ms4.statCited(buildings.filter(isPlanned).length) },
@@ -265,9 +348,9 @@ export function buildChapters(A: Area): Chapter[] {
         el.append(s1, s2);
       },
     },
-    // ---------------- 05 connections ----------------
+    // ---------------- 06 connections ----------------
     {
-      id: 5, label: T.cn.label, tab: T.cn.tab, title: T.cn.title, lead: T.cn.lead(fmt(legsTotal)),
+      id: 6, label: T.cn.label, tab: T.cn.tab, title: T.cn.title, lead: T.cn.lead(fmt(legsTotal)),
       stats: nn([
         { fig: fmt(legsTotal), unit: U.m, cap: T.cn.statLength },
         { fig: fmt(pct(legsSheltered, legsTotal)), unit: U.pct, cap: T.cn.statSheltered },
@@ -295,9 +378,9 @@ export function buildChapters(A: Area): Chapter[] {
         el.append(s1, s2);
       },
     },
-    // ---------------- 06 event day (illustrative crowd) ----------------
+    // ---------------- 07 event day (illustrative crowd) ----------------
     {
-      id: 6, label: T.ev.label, tab: T.ev.tab, title: T.ev.title, lead: T.ev.lead(cap ? fmt(cap) : '—', rec ? fmt(rec) : '—'),
+      id: 7, label: T.ev.label, tab: T.ev.tab, title: T.ev.title, lead: T.ev.lead(cap ? fmt(cap) : '—', rec ? fmt(rec) : '—'),
       stats: nn([
         cap ? { fig: fmt(cap), unit: U.seats, cap: T.ev.statCap } : null,
         leg1 ? { fig: `≈${fmt(leg1.minutes, 1)}`, unit: U.min, cap: T.ev.statWalk } : null,
@@ -331,9 +414,9 @@ export function buildChapters(A: Area): Chapter[] {
         el.append(s1);
       },
     },
-    // ---------------- 07 walking routes ----------------
+    // ---------------- 08 walking routes ----------------
     {
-      id: 7, label: T.wk.label, tab: T.wk.tab, title: T.wk.title, lead: T.wk.lead,
+      id: 8, label: T.wk.label, tab: T.wk.tab, title: T.wk.title, lead: T.wk.lead,
       stats: walks.length ? [
         { fig: fmt(walks.length), unit: U.routes, cap: T.wk.statCount },
         { fig: `${fmt(Math.min(...walks.map((w) => w.length)))}–${fmt(Math.max(...walks.map((w) => w.length)))}`, unit: U.m, cap: T.wk.statRange },
@@ -371,9 +454,9 @@ export function buildChapters(A: Area): Chapter[] {
         if (walks[0]) show(walks[0], false);
       },
     },
-    // ---------------- 08 green & shade ----------------
+    // ---------------- 09 green & shade ----------------
     {
-      id: 8, label: T.gr.label, tab: T.gr.tab, title: T.gr.title,
+      id: 9, label: T.gr.label, tab: T.gr.tab, title: T.gr.title,
       lead: T.gr.lead(meta.center.lat.toFixed(1), fmt(noon.jun.pos.altitude, 1), fmt(noon.dec.pos.altitude, 1)),
       stats: nn([
         parkHa ? { fig: fmt(parkHa, 1), unit: U.ha, cap: T.gr.statPark, swatch: zoneColor('park') } : null,
@@ -445,9 +528,9 @@ export function buildChapters(A: Area): Chapter[] {
         update(true);
       },
     },
-    // ---------------- 09 rain & monsoon ----------------
+    // ---------------- 10 rain & monsoon ----------------
     {
-      id: 9, label: T.rn.label, tab: T.rn.tab, title: T.rn.title,
+      id: 10, label: T.rn.label, tab: T.rn.tab, title: T.rn.title,
       lead: T.rn.lead(fmt(climate.yearPrecipitationMm), fmt(climate.yearPrecipitationDays, 1), T.monthsLong[wettestIdx]),
       stats: [
         { fig: fmt(stats.shelteredFootPct), unit: U.pct, cap: T.rn.statFoot(stats.shelteredFootM, stats.footwayM) },

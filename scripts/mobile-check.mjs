@@ -143,7 +143,7 @@ for (const [w, h] of SIZES) {
   ok(g.curInView, `${tag}: current tab scrolled into view`);
   await page.tap('#btn-prev'); await settle(page, 900); ok((await hash(page)) === '#07', `${tag}: prev button`, await hash(page));
   // every chapter: overlaps, pins on screen and tap targets with the sheet collapsed and expanded
-  for (let id = 0; id <= 8; id++) {
+  for (let id = 0; id <= 10; id++) {
     await page.evaluate((id) => window.__mv.goTo(id), id); await settle(page, 600);
     g = await geo(page); overlaps(g, `${tag} ch${id}`);
     ok(g.pins.every((p) => p.x0 >= -0.5 && p.x1 <= w + 0.5), `${tag} ch${id}: pin tags on screen`, g.pins.filter((p) => p.x0 < 0 || p.x1 > w));

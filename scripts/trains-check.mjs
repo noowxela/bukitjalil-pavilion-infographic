@@ -15,7 +15,7 @@ async function open(name, q, { rm = false } = {}) {
   await p.goto(`${base}?${q}`, { waitUntil: 'networkidle0', timeout: 120000 });
   await p.waitForFunction(() => window.__mv?.world?.trains, { timeout: 120000 }); await sleep(1500); return p;
 }
-const p = await open('02', 'chapter=2&lang=en');
+const p = await open('03', 'chapter=3&lang=en');
 const r = await p.evaluate(async () => {
   const tr = window.__mv.world.trains; const c0 = tr.clock; const s0 = JSON.stringify(tr.state());
   await new Promise((res) => setTimeout(res, 2500));
@@ -24,13 +24,13 @@ const r = await p.evaluate(async () => {
     lrt: getComputedStyle(document.documentElement).getPropertyValue('--c-lrt').trim().toLowerCase(),
     codes: ['SP17', 'SP19', 'SP20'].filter((c) => document.body.innerText.includes(c)) };
 });
-console.log('02 trains', JSON.stringify(r));
-if (!(r.advanced > 0.5 && r.moved && r.visible && r.n > 0)) bad.push('trains not running / shown in 02');
+console.log('03 trains', JSON.stringify(r));
+if (!(r.advanced > 0.5 && r.moved && r.visible && r.n > 0)) bad.push('trains not running / shown in 03');
 if (r.lrt !== '#721422') bad.push(`--c-lrt ${r.lrt}`);
 if (r.codes.length !== 3) bad.push(`station codes on screen: ${r.codes}`);
 const t = await p.evaluate(async () => { const b = document.getElementById('btn-trains'); b?.click(); await new Promise((r) => setTimeout(r, 300)); const off = window.__mv.world.trains.group.visible; b?.click(); await new Promise((r) => setTimeout(r, 300)); return { found: !!b, off, on: window.__mv.world.trains.group.visible }; });
 console.log('toggle', JSON.stringify(t)); if (!t.found || t.off || !t.on) bad.push('trains toggle');
-const q = await open('rm', 'chapter=2&lang=en', { rm: true });
+const q = await open('rm', 'chapter=3&lang=en', { rm: true });
 const rm = await q.evaluate(async () => { const tr = window.__mv.world.trains; const a = JSON.stringify(tr.state()); await new Promise((r) => setTimeout(r, 1200)); return { same: a === JSON.stringify(tr.state()) }; });
 console.log('reduced motion', JSON.stringify(rm)); if (!rm.same) bad.push('trains move under reduced motion');
 await browser.close();
